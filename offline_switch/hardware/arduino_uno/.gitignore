@@ -1,0 +1,6 @@
+# Arduino Environment
+.arduino/
+
+# Arduino Artifacts
+build/
+dist/
