@@ -1,36 +1,172 @@
-# **Pseudo Code Summary**
+# Offline Switch
 
-## **SETUP:**
+## Description
+
+Offline Switch is a high current load electricaly appliance scheduler comprising RTC, Keypad and Relay.
+
+---
+
+## Getting Started
+
+### Prerequisites
+- Arduino CLI installed ([Installation Guide](https://arduino.github.io/arduino-cli/installation/))
+- Git installed
+- USB cable for Arduino board
+- Hardware: Arduino UNO, 16x4 I2C LCD, DS3231 RTC, Relay Module, Current Sensor
+
+### Project Setup
+
+**1. Clone the repository**
+```bash
+git clone <repository-url>
+cd offline-switch
 ```
+
+**2. Set up Arduino environment**
+```bash
+export ARDUINO_DATA_DIR=$(pwd)/.arduino
+arduino-cli core update-index
+```
+
+**3. Install dependencies**
+```bash
+# Install board cores
+while read core; do
+  arduino-cli core install "$core"
+done < cores.lock
+
+# Install libraries
+while read lib; do
+  arduino-cli lib install "$lib"
+done < libs.lock
+```
+
+**Cores file (`cores.lock`):**
+```
+arduino:avr@1.8.6
+```
+
+**Libraries file (`libs.lock`):**
+```
+RTClib@2.1.1
+LiquidCrystal I2C@1.1.2
+```
+
+### Build and Upload
+
+**Compile the sketch**
+```bash
+arduino-cli compile \
+  --fqbn arduino:avr:uno \
+  --build-path ./build \
+  --output-dir ./dist \
+  offline_switch.ino
+```
+
+**Upload to board**
+```bash
+arduino-cli upload \
+  -p /dev/ttyUSB0 \
+  --fqbn arduino:avr:uno \
+  offline_switch.ino
+```
+*Note: Replace `/dev/ttyUSB0` with your port (Windows: `COM3`, macOS: `/dev/cu.usbserial`)*
+
+**Find your board**
+```bash
+arduino-cli board list
+```
+
+### VS Code IntelliSense Setup
+
+**Generate compile commands**
+```bash
+arduino-cli compile \
+  --fqbn arduino:avr:uno \
+  --build-path ./build \
+  --only-compilation-database \
+  offline_switch.ino
+```
+
+### Development Workflow
+
+**Install new library**
+```bash
+arduino-cli lib install "RTClib@2.1.1"
+arduino-cli lib list | awk 'NR>1 {print $1"@"$2}' > libs.lock
+```
+
+**Update library**
+```bash
+arduino-cli lib upgrade RTClib
+# Regenerate libs.lock after upgrade
+```
+
+**Clean build**
+```bash
+rm -rf build dist
+arduino-cli compile --fqbn arduino:avr:uno --build-path ./build .
+```
+
+### Bootstrap Script (`scripts/bootstrap.sh`)
+```bash
+#!/bin/bash
+export ARDUINO_DATA_DIR=$(pwd)/.arduino
+
+echo "Installing board cores..."
+while read core; do
+  arduino-cli core install "$core"
+done < cores.lock
+
+echo "Installing libraries..."
+while read lib; do
+  arduino-cli lib install "$lib"
+done < libs.lock
+
+echo "Setup complete!"
+```
+
+**Usage on new machine:**
+```bash
+git clone <repo>
+cd offline-switch
+bash scripts/bootstrap.sh
+```
+
+---
+
+## Working Principles
+
+### Setup
+
 1. Initialize GPIO (relay, buzzer, LED, manual switch, keypad)
-2. Initialize I2C communication
-3. Initialize LCD (16x4)
-4. Initialize RTC, set time if lost power
-5. Load test schedules (optional, for testing)
-6. Display "System Starting" message
-```
+2. Initialize Serial Communication (9600 baud)
+3. Initialize I2C Communication
+4. Initialize LCD (16x4 @ 0x20)
+5. Initialize RTC, set time if lost power
+6. Load test schedules (optional, for testing)
+7. Display "System Starting" message
 
-## **LOOP:**
-```
-Every 1 second:
-  - Read current time from RTC
-  - Check if any schedule should activate
-  - If relay ON, read current sensor and alert if no load
-  - Update status LED
-  - Auto-return to VIEW_STATUS after 30s inactivity
-  - Update LCD display
+### Loop
 
-Every 50ms:
-  - Read keypad input
-  - Handle key presses based on current mode
+**Every 1 second:**
+- Read current time from RTC
+- Check if any schedule should activate
+- If relay ON, read current sensor and alert if no load
+- Update status LED
+- Auto-return to VIEW_STATUS after 30s inactivity
+- Update LCD display
 
-Continuously:
-  - Check manual override switch
-```
+**Every 50ms:**
+- Read keypad input
+- Handle key presses based on current mode
 
-## **KEY FUNCTIONS:**
+**Continuously:**
+- Check manual override switch
 
-**handleKeypress(key):**
+### Key Functions
+
+**handleKeypress(key)**
 ```
 If in VIEW_STATUS mode:
   - UP or DOWN → Enter EDIT_SCHEDULE mode
@@ -46,7 +182,7 @@ If in EDIT_SCHEDULE mode:
   - TOGGLE → Manual override
 ```
 
-**checkSchedules():**
+**checkSchedules()**
 ```
 For each active schedule:
   If current time matches schedule time AND relay OFF:
@@ -58,7 +194,7 @@ If relay ON:
     - Turn relay OFF
 ```
 
-**updateDisplay():**
+**updateDisplay()**
 ```
 Line 0: Current time (HH:MM:SS) + Relay status (ON/OFF)
 
@@ -73,6 +209,7 @@ If EDIT_SCHEDULE:
   Line 3: Duration (XXX min) with cursor indicator
 ```
 
-**sortSchedules():**
+**sortSchedules()**
 ```
 Bubble sort schedules by time (earliest first)
+```
