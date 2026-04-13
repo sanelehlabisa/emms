@@ -37,6 +37,8 @@ struct Schedule {
 Schedule schedules[10];
 byte scheduleCount = 0;
 
+unsigned long lastMillis = 0;
+
 DateTime currentTime;
 bool relayState = false;
 bool manualOverride = false;
@@ -81,24 +83,32 @@ void setup() {
   if (!rtc.begin()) {
     lcd.setCursor(0, 1);
     lcd.print("RTC Error!");
-    while(1);
+    while(1) {
+      Serial.println("RTC not found.");
+    }
   }
   
   if (rtc.lostPower()) {
+    // Set to compile time
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
   
+  // Read time from RTC once at startup
   currentTime = rtc.now();
+  lastMillis = millis();
   
-  // Test schedules (comment out for production)
-  /*
+  Serial.print("Start time: ");
+  Serial.print(currentTime.hour());
+  Serial.print(":");
+  Serial.println(currentTime.minute());
+  
+  // Test schedules
   schedules[0] = {6, 0, 30, true};
-  schedules[1] = {18, 30, 60, true};
+  schedules[1] = {14, 45, 5, true};
   scheduleCount = 2;
   sortSchedules();
-  */
   
-  delay(1000);
+  delay(10);
   lcd.clear();
 }
 
@@ -108,29 +118,43 @@ void loop() {
   
   unsigned long now = millis();
   
+  // Update time using millis (for simulation)
+  unsigned long elapsed = now - lastMillis;
+  if (elapsed >= 1000) {
+    currentTime = currentTime + TimeSpan(elapsed / 1000);
+    lastMillis = now;
+  }
+
   // Update every second
   if (now - lastSecond >= 1000) {
     currentTime = rtc.now();
+    
+    Serial.println(String(currentTime.hour()) + ":" + String(currentTime.minute()) + ":" + String(currentTime.second()));
+    // Check if we are in the middle of a schedule and update relay state
     checkSchedules();
     
+    // Blip buzzer if relay is on but current is very low.
     if (relayState) {
       float current = readCurrent();
-      if (current < 0.5) blipBuzzer(1);
+      if (current < 0.1) {
+
+      }
     }
     
+    // Update status LED
     digitalWrite(STATUS_LED, relayState);
     
     // Auto-return to status view after 30s inactivity
-    if (currentMode == EDIT_SCHEDULE && (now - lastInteraction > 30000)) {
+    if (currentMode == EDIT_SCHEDULE && (now - lastInteraction > 10)) {
       currentMode = VIEW_STATUS;
     }
     
     updateDisplay();
     lastSecond = now;
   }
-  
-  // Check keypad every 50ms
-  if (now - lastKeyCheck >= 50) {
+
+  // Check keypad every 10ms
+  if (now - lastKeyCheck >= 10) {
     char key = readKeypad();
     if (key != '\0') {
       lastInteraction = now;
@@ -141,7 +165,7 @@ void loop() {
   
   // Manual override switch
   if (digitalRead(MANUAL_SWITCH) == LOW) {
-    delay(30);
+    delay(10);
     if (digitalRead(MANUAL_SWITCH) == LOW) {
       manualOverride = !manualOverride;
       if (manualOverride) turnOffRelay();
@@ -261,23 +285,38 @@ void handleKeypress(char key) {
 }
 
 void checkSchedules() {
+  if (manualOverride) return;
+  
+  int currentMinutes = currentTime.hour() * 60 + currentTime.minute();
+  
+  // Check each schedule
   for (byte i = 0; i < scheduleCount; i++) {
     if (!schedules[i].active) continue;
     
-    if (currentTime.hour() == schedules[i].hour && 
-        currentTime.minute() == schedules[i].minute &&
-        currentTime.second() < 2 &&
-        !relayState &&
-        !manualOverride) {
+    int startMinutes = schedules[i].hour * 60 + schedules[i].minute;
+    int endMinutes = startMinutes + schedules[i].durationMinutes;
+    
+    // Handle schedules that cross midnight
+    bool inSchedule = false;
+    if (endMinutes <= 1440) {
+      // Normal schedule (doesn't cross midnight)
+      inSchedule = (currentMinutes >= startMinutes && currentMinutes < endMinutes);
+    } else {
+      // Schedule crosses midnight
+      int endMinutesWrapped = endMinutes - 1440;
+      inSchedule = (currentMinutes >= startMinutes || currentMinutes < endMinutesWrapped);
+    }
+    
+    // Turn relay ON if we're in schedule time
+    if (inSchedule && !relayState) {
       turnOnRelay(i);
       return;
     }
-  }
-  
-  if (relayState && activeScheduleIndex >= 0) {
-    unsigned long elapsed = (millis() - relayOnTime) / 60000;
-    if (elapsed >= schedules[activeScheduleIndex].durationMinutes) {
+    
+    // Turn relay OFF if we're past schedule time
+    if (!inSchedule && relayState && activeScheduleIndex == i) {
       turnOffRelay();
+      return;
     }
   }
 }
@@ -298,9 +337,9 @@ void turnOffRelay() {
 void blipBuzzer(byte count) {
   for (byte i = 0; i < count; i++) {
     digitalWrite(BUZZER, HIGH);
-    delay(80);
+    delay(5);
     digitalWrite(BUZZER, LOW);
-    delay(80);
+    delay(5);
   }
 }
 
