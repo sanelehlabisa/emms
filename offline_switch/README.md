@@ -18,7 +18,7 @@ Offline Switch is a high current load electricaly appliance scheduler comprising
 
 **1. Clone the repository**
 ```bash
-git clone <repository-url>
+git clone https://github.com/sanelehlabisa/emms.git
 cd offline-switch
 ```
 
