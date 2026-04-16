@@ -19,7 +19,7 @@ Offline Switch is a high current load electricaly appliance scheduler comprising
 **1. Clone the repository**
 ```bash
 git clone https://github.com/sanelehlabisa/emms.git
-cd offline-switch
+cd emms/offline_switch/hardware/arduino_uno
 ```
 
 **2. Set up Arduino environment**
@@ -60,7 +60,7 @@ arduino-cli compile \
   --fqbn arduino:avr:uno \
   --build-path ./build \
   --output-dir ./dist \
-  offline_switch.ino
+  arduino_uno.ino
 ```
 
 **Upload to board**
@@ -68,7 +68,7 @@ arduino-cli compile \
 arduino-cli upload \
   -p /dev/ttyUSB0 \
   --fqbn arduino:avr:uno \
-  offline_switch.ino
+  arduino_uno.ino
 ```
 *Note: Replace `/dev/ttyUSB0` with your port (Windows: `COM3`, macOS: `/dev/cu.usbserial`)*
 
@@ -85,7 +85,7 @@ arduino-cli compile \
   --fqbn arduino:avr:uno \
   --build-path ./build \
   --only-compilation-database \
-  offline_switch.ino
+  arduino_uno.ino
 ```
 
 ### Development Workflow
