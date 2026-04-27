@@ -137,79 +137,126 @@ bash scripts/bootstrap.sh
 
 ## Working Principles
 
-### Setup
-
-1. Initialize GPIO (relay, buzzer, LED, manual switch, keypad)
-2. Initialize Serial Communication (9600 baud)
-3. Initialize I2C Communication
-4. Initialize LCD (16x4 @ 0x20)
-5. Initialize RTC, set time if lost power
-6. Load test schedules (optional, for testing)
-7. Display "System Starting" message
-
-### Loop
-
-**Every 1 second:**
-- Read current time from RTC
-- Check if any schedule should activate
-- If relay ON, read current sensor and alert if no load
-- Update status LED
-- Auto-return to VIEW_STATUS after 30s inactivity
-- Update LCD display
-
-**Every 50ms:**
-- Read keypad input
-- Handle key presses based on current mode
-
-**Continuously:**
-- Check manual override switch
-
-### Key Functions
-
-**handleKeypress(key)**
+### **SETUP:**
 ```
-If in VIEW_STATUS mode:
-  - UP or DOWN → Enter EDIT_SCHEDULE mode
-  - DOWN → Add new schedule if < 10 schedules
-
-If in EDIT_SCHEDULE mode:
-  - UP → Next schedule
-  - DOWN → Previous schedule
-  - LEFT/RIGHT → Move cursor (hour → minute → duration)
-  - INC/DEC → Adjust selected field
-  - DELETE → Remove current schedule
-  - ENTER → Save and return to VIEW_STATUS
-  - TOGGLE → Manual override
+1. Initialize serial communication (115200 baud)
+2. Configure GPIO pins:
+   - MANUAL_SWITCH as input with pullup
+   - RELAY, STATUS_LED, BUZZER as outputs
+3. Set all outputs to LOW (off state)
+4. Initialize I2C communication
+5. Initialize RTC:
+   - If RTC not found, halt with error
+   - If RTC lost power, set to compile time
+6. Read initial time from RTC
+7. Initialize timing variable (lastMillis)
+8. Print "Setup Complete"
 ```
 
-**checkSchedules()**
-```
-For each active schedule:
-  If current time matches schedule time AND relay OFF:
-    - Turn relay ON
-    - Record start time and schedule index
+---
 
-If relay ON:
-  If duration elapsed:
-    - Turn relay OFF
+### **LOOP:**
+```
+1. Get current millisecond timestamp (via getTime())
+
+2. Update currentTime variable:
+   - Calculate elapsed time since last update
+   - If >= 1 second has passed:
+     - Increment currentTime by elapsed seconds
+     - Reset lastMillis
+     - [On real hardware: read fresh time from RTC]
+
+3. Read current sensor:
+   - Sample ADC voltage from sensor
+   - Track peak voltage over 20ms window
+   - Calculate RMS current from peak
+   - Reset peak tracker every cycle
+
+4. Check manual button:
+   - Apply 50ms debounce delay
+   - If button pressed (LOW):
+     - Toggle relay state
+     - Set overrideActive flag
+     - Log override action
+
+5. Get schedule state (should relay be ON?):
+   - Convert current time to minutes
+   - Check each schedule:
+     - Calculate start/end times in minutes
+     - Handle midnight wrapping (e.g., 23:00 + 120min = 01:00)
+     - Return true if current time within any schedule
+
+6. Handle schedule state changes:
+   - If scheduleState changed since last loop:
+     - Clear overrideActive flag
+     - Log "override expired"
+     - Update prevScheduleState
+
+7. Apply relay control:
+   - If NOT overridden:
+     - Set relay to match schedule state
+
+8. Check for load issues:
+   - If relay ON but current < threshold:
+     - Buzz every 1 second
+     - Log "No load detected"
+
+9. Log status (every 10ms):
+   - Print: Time, Relay State, Current
+   - Calculate minutes until next event:
+     - If currently IN schedule: time until OFF
+     - If currently OUT: time until next ON
+   - Print countdown
 ```
 
-**updateDisplay()**
-```
-Line 0: Current time (HH:MM:SS) + Relay status (ON/OFF)
+---
 
-If VIEW_STATUS:
-  Line 1: Status (Manual Override / Off in X min / Standby)
-  Line 2: Load current (X.X A)
-  Line 3: Next event (Next ON/OFF HH:MM)
+### **KEY FUNCTIONS:**
 
-If EDIT_SCHEDULE:
-  Line 1: Schedule number (Sch X/Y)
-  Line 2: Time (HH:MM) with cursor indicator
-  Line 3: Duration (XXX min) with cursor indicator
+**checkSchedule():**
+```
+Convert current time to total minutes (hour*60 + minute)
+For each schedule:
+  Calculate start time in minutes
+  Calculate end time (start + duration)
+  
+  If schedule does NOT cross midnight:
+    Return TRUE if current time between start and end
+  
+  If schedule crosses midnight (end > 1440):
+    Wrap end time (subtract 1440)
+    Return TRUE if current time after start OR before wrapped end
+
+Return FALSE if no schedule active
 ```
 
-**sortSchedules()**
+**getMinutesUntilNextEvent():**
 ```
-Bubble sort schedules by time (earliest first)
+If currently IN schedule:
+  Find which schedule is active
+  Calculate end time
+  Handle midnight wrapping
+  Return (end - current) in minutes
+
+If currently OUT of schedule:
+  Find nearest upcoming start time
+  Handle day wrapping (tomorrow's schedule)
+  Return difference in minutes
+```
+
+**updateRelay(state):**
+```
+If new state differs from current relay state:
+  Update relayState variable
+  Set RELAY pin HIGH/LOW
+  Set STATUS_LED pin HIGH/LOW
+```
+
+---
+
+**getTime() - abstraction layer:**
+```
+Real hardware: return millis()
+Proteus simulation: return micros()/1000
+Future RTC-based: return rtc-derived milliseconds
 ```
