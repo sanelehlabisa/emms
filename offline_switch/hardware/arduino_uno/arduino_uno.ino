@@ -25,7 +25,7 @@ struct Schedule
 
 Schedule schedules[] = {
     {6, 0, 60},
-    {16, 0, 120}};
+    {18, 0, 120}};
 const byte scheduleCount = 2;
 
 float current = 0.0;
@@ -44,6 +44,14 @@ bool lastButtonState = HIGH;
 
 DateTime currentTime;
 unsigned long lastMillis = 0;
+
+unsigned long getTime() {
+  // For real hardware: use millis()
+  //return millis();
+  
+  // For Proteus simulation: uncomment line below and comment line above
+  return micros();
+}
 
 void setup()
 {
@@ -72,14 +80,14 @@ void setup()
   }
 
   currentTime = rtc.now();
-  lastMillis = micros(); // millis(); For simulation
+  lastMillis = getTime();
 
   Serial.println("Setup Complete");
 }
 
 void updateCurrentReading()
 {
-  unsigned long now = micros(); // millis(); // For simulation
+  unsigned long now = getTime();
 
   float sensorVoltage = analogRead(CURRENT_SENSOR) * (ADC_REF_VOLTAGE / ADC_RESOLUTION);
 
@@ -161,11 +169,11 @@ void updateRelay(bool state)
 void buzzIfNeeded()
 {
   static unsigned long lastBuzz = 0;
-  unsigned long now = micros(); // millis(); For simulation
+  unsigned long now = getTime();
 
   if (relayState && current < CURRENT_THRESHOLD)
   {
-    if (now - lastBuzz >= 10)
+    if (now - lastBuzz >= 1000)
     {
       digitalWrite(BUZZER, HIGH);
       delay(1);
@@ -229,20 +237,29 @@ int getMinutesUntilNextEvent()
 
 void loop()
 {
-  unsigned long now = micros(); // millis(); For simulation
+  unsigned long now = getTime();
 
+  // Update current time every second
   unsigned long elapsed = now - lastMillis;
   if (elapsed >= 1000)
   {
     currentTime = currentTime + TimeSpan(elapsed / 1000);
     lastMillis = now;
+    
+    // For real hardware: uncomment line below to sync with RTC
+    // currentTime = rtc.now();
   }
 
+  // Read current sensor continuously
   updateCurrentReading();
+  
+  // Check for button press (with debouncing)
   checkButton(now);
 
+  // Get current schedule state
   bool scheduleState = checkSchedule();
 
+  // Clear override when schedule changes state
   if (scheduleState != prevScheduleState)
   {
     overrideActive = false;
@@ -250,12 +267,16 @@ void loop()
     prevScheduleState = scheduleState;
   }
 
+  // Apply schedule if no manual override active
   if (!overrideActive)
   {
     updateRelay(scheduleState);
   }
 
+  // Alert if relay on but no load detected
   buzzIfNeeded();
+  
+  // Log status every 10ms
   static unsigned long lastLog = 0;
   if (now - lastLog >= 10)
   {
